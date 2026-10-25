@@ -1,292 +1,516 @@
-# TimeTravel
+# Neural Nexus
 
-### Time-travel debugging for AI agents — an OTel-in / replay-out engine
+### A time-travel debugger for AI agents
 
-> TimeTravel an agent to any span, change a prompt, and re-run **live** from there —
-> branching a new timeline you can diff against the original.
-> Consumes standard OpenTelemetry / OpenInference traces. No cloud, no API keys,
-> no persistent production proxy, no data leaving the machine.
+**Inspect an agent run. Rewind to a specific step. Change the input or prompt. Replay the run and compare the result.**
+
+Neural Nexus is a developer tool for understanding how AI agents behave at runtime. It captures execution traces, presents them as an interactive timeline, and helps developers investigate unexpected results by replaying recorded operations or branching from a chosen point.
+
+The project uses **MongoDB as its persistence layer** for trace data and debugging sessions. It is designed around local development workflows and OpenTelemetry-compatible instrumentation, so developers can inspect agent behavior without introducing a permanent proxy into their production traffic path.
 
 ---
 
-## What it does
+## Why Neural Nexus?
 
-A developer running an agent on `qwen3:32b` via Ollama captures a run with any
-OpenInference/OTel instrumentor, timetravels to span 4, edits the system prompt,
-branches the execution forward live against the same local model, and sees a
-side-by-side diff of what changed — all offline, in under a minute of setup.
+Debugging an AI agent is more complicated than debugging a conventional function. A single run can contain model requests, tool calls, intermediate steps, and generated outputs. When the final answer changes, ordinary logs often do not make it easy to identify the exact step that caused the difference.
 
-## Architecture (the key insight)
+Neural Nexus provides a workflow for investigating that behavior:
 
+- Capture execution traces from instrumented agent applications.
+- Explore traces and spans in a timeline.
+- Replay a recorded execution using stored responses.
+- Branch from a selected step and continue with live model or tool calls.
+- Compare a modified run against the original execution.
+- Save checkpoints and resume debugging from a known state.
+- Run evaluation suites against candidate behavior.
+- Persist trace and debugging records in MongoDB.
+
+## Core idea: capture versus replay
+
+Neural Nexus treats trace capture and replay as two separate responsibilities.
+
+```text
+CAPTURE
+Agent application
+      |
+      | OpenTelemetry / OpenInference spans
+      v
+OTLP receiver
+      |
+      v
+MongoDB
+
+REPLAY
+Recorded trace
+      |
+      v
+Replay engine
+      |
+      +---- Frozen replay: use recorded responses
+      |
+      +---- Branch replay: resume live execution from a chosen step
+                         |
+                         v
+                Compare with original run
 ```
-Capture = PASSIVE   ->  an OTel span only exists *after* a call completes.
-                        OpenTelemetry + OpenInference solve this. We ingest.
-Replay  = ACTIVE    ->  to timetravel we *inject* the cached response during a
-                        re-run. That is runtime patching, not observability.
+
+**Capture is passive:** the application emits telemetry after operations complete. Neural Nexus receives and stores the spans.
+
+**Replay is active:** during a debugging session, the replay layer uses stored responses for earlier operations or allows execution to continue live from a selected point. This makes it possible to test a changed prompt, input, or configuration against the original run.
+
+The receiver and replay engine share the same MongoDB-backed storage layer, so the debugger can work with traces collected earlier.
+
+---
+
+## Features
+
+### Trace collection
+
+- Ingest OpenTelemetry trace data through an OTLP receiver.
+- Preserve trace and span relationships for later inspection.
+- Store timing, status, attributes, and relevant operation metadata.
+- Keep capture separate from the application's normal request path.
+
+### Interactive timeline
+
+- View spans in execution order.
+- Inspect individual operations and their metadata.
+- Identify the point where a run behaved unexpectedly.
+- Navigate from a trace to the operation selected for replay.
+
+### Frozen replay
+
+Re-run the recorded path with responses retrieved from the stored trace instead of making the same outbound model calls again. This is useful for reproducing a run and inspecting its behavior without repeatedly paying for inference.
+
+### Branch replay
+
+Start from a selected span and continue execution with live calls. This makes it possible to experiment with a changed prompt or input while retaining the original execution as a baseline.
+
+### Checkpointing
+
+Save debugging state at useful points and restore it later, subject to the state supported by the agent integration. Checkpoint records are persisted in MongoDB.
+
+### Diff and evaluation
+
+Compare an original execution with a branch, and run evaluation suites to check candidate behavior against a baseline. Store evaluation metadata and results alongside the related debugging records.
+
+### Framework integrations
+
+Neural Nexus is designed to work with OpenTelemetry/OpenInference traces and replay adapters for supported agent and model frameworks. Optional framework dependencies may be required. Consult the adapter documentation in the repository for the integrations supported by the current build.
+
+### MongoDB persistence
+
+MongoDB stores the trace and debugging data used by the receiver, replay engine, checkpoints, branches, and evaluation workflows. The document-oriented model supports storing flexible span attributes and framework-specific metadata without requiring every attribute to share a fixed relational schema.
+
+---
+
+## Architecture
+
+```text
+┌─────────────────────────┐
+│   Instrumented Agent    │
+│  LLM calls / Tool calls │
+└────────────┬────────────┘
+             │ OTel / OpenInference
+             v
+┌─────────────────────────┐
+│      OTLP Receiver      │
+│ Validate and ingest     │
+└────────────┬────────────┘
+             │
+             v
+┌─────────────────────────┐
+│   MongoDB Storage       │
+│ traces, spans, sessions │
+│ checkpoints, branches   │
+│ evaluations             │
+└────────────┬────────────┘
+             │
+       ┌─────┴───────────┐
+       v                 v
+┌───────────────┐  ┌────────────────┐
+│ Replay Engine │  │ Evaluation     │
+│ Frozen/Branch │  │ and Diff       │
+└───────┬───────┘  └───────┬────────┘
+        └─────────┬────────┘
+                  v
+        ┌──────────────────┐
+        │  Web Workbench   │
+        │ Timeline / Debug │
+        └──────────────────┘
 ```
 
-So TimeTravel does **not** need its own capture proxy. It needs:
+### Main components
 
-1. A **local OTLP receiver** that stores traces into SQLite (production path,
-   zero agent-side lock-in).
-2. A **decorator-first workbench** that invokes registered agents with typed
-   inputs and a `TimeTravelContext` only during a debug session.
-3. An **opt-in replay-time LLM-client wrapper** (`timetravel.replay()`) — *only*
-   active during a debug session, never in production.
+| Component | Responsibility |
+|---|---|
+| Agent instrumentation | Emits telemetry for model calls, tool calls, and other operations |
+| OTLP receiver | Accepts trace data and forwards it to storage |
+| MongoDB storage layer | Persists trace data and debugging records |
+| Replay engine | Reproduces recorded calls or branches execution from a selected point |
+| Checkpoint manager | Saves and restores supported debugging state |
+| Diff engine | Compares a candidate run with its baseline |
+| Evaluation runner | Executes evaluation suites and records results |
+| Web workbench | Displays traces and provides the interactive debugging workflow |
+| CLI | Starts services and exposes the supported replay and evaluation commands |
 
-## Status
+---
 
-| Phase | What | Status |
-|---|---|---|
-| P0 | Foundation + OTel-shaped data model | ✅ Done (`docs/phases/phase-0.md`) |
-| P1 | OTLP ingestion + receiver + storage | ✅ Done (`docs/phases/phase-1.md`) |
-| P2 | Read-only timeline UI | ✅ Done (`docs/phases/phase-2.md`) |
-| P3 | Replay engine + interceptor (the moat) | ✅ Done (`docs/phases/phase-3.md`) |
-| P4 | State checkpointing | ✅ Done (`docs/phases/phase-4.md`) |
-| P5 | Branching & diff UI | ✅ Done (`docs/phases/phase-5.md`) |
-| P5.5 | Batch parallel eval harness | ✅ Done (`docs/phases/phase-5.5.md`) |
-| P6 | Per-framework replay adapters | ✅ Done (`docs/phases/phase-6.md`) |
-| P7 | Local-model enrichment | ✅ Done (`docs/phases/phase-7.md`) |
-| P8 | Polish, packaging, distribution | ✅ Done (`docs/phases/phase-8.md`) |
-| P9 | Interactive step-through debugging | ✅ Done ([docs/phases/phase-9.md](docs/phases/phase-9.md)) |
+## MongoDB data model
+
+Neural Nexus uses MongoDB collections to organize the information needed by the debugger. Collection names below describe the project's logical data model; they should match the names configured in the storage implementation.
+
+| Collection | Stored information |
+|---|---|
+| `traces` | Trace identifiers, run metadata, timestamps, and trace-level status |
+| `spans` | Individual operations, parent-child relationships, attributes, events, and timing |
+| `sessions` | Interactive debugging sessions and session state |
+| `checkpoints` | Saved execution state and references to the relevant trace or session |
+| `branches` | Parent trace, branch point, and metadata for alternative executions |
+| `evaluations` | Evaluation suite metadata, candidate results, and baseline comparisons |
+
+### Relationships
+
+- A trace contains multiple spans.
+- A span can reference a parent span, allowing the debugger to reconstruct the execution tree.
+- A branch references the original trace and the span where the new execution begins.
+- A checkpoint references the trace or session whose state it represents.
+- An evaluation record links a candidate run to its suite and baseline.
+
+### Indexing
+
+Indexes should be created for fields used frequently by the receiver and UI, such as:
+
+- `trace_id`
+- `span_id`
+- `parent_span_id`
+- `session_id`
+- `branch_id`
+- timestamps used for sorting or filtering
+
+Compound indexes should follow the actual query patterns in the storage layer. Unique constraints should be used only where the data model guarantees uniqueness.
+
+---
 
 ## Quick start
 
+### Prerequisites
+
+- Python version supported by `pyproject.toml`
+- MongoDB Community Server or a MongoDB Atlas cluster
+- Git
+- Node.js and pnpm/npm for frontend development, if required by your checkout
+
+### 1. Clone the repository
+
 ```bash
-pip install agent-timetravel
-# The wheel includes the built timeline UI; no separate frontend build is needed.
-agent-timetravel serve --port 4318 --db ./timetravel.db
-# Point your OTel/OpenInference-instrumented agent at:
-#   OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4318
-# Run a trace, then inspect it in the browser:
-agent-timetravel ui --port 8484 --db ./timetravel.db
-# → http://127.0.0.1:8484/ui
+git clone <YOUR_REPOSITORY_URL>
+cd <YOUR_REPOSITORY_DIRECTORY>
 ```
 
-### Decorator-first agents
+Replace the placeholders with your repository URL and local directory name.
 
-The current workbench entry point is a `TimeTravel` object with typed agent inputs:
+### 2. Create a virtual environment
+
+**Windows PowerShell**
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install --upgrade pip
+pip install -e ".[dev]"
+```
+
+**macOS / Linux**
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+pip install -e ".[dev]"
+```
+
+### 3. Configure MongoDB
+
+Create a `.env` file in the project root, or set the equivalent environment variables using the configuration mechanism supported by the application.
+
+```dotenv
+MONGODB_URI=mongodb://127.0.0.1:27017
+MONGODB_DATABASE=neural_nexus
+```
+
+For MongoDB Atlas, use the connection string from your Atlas deployment and configure network access and database credentials there.
+
+**Keep secrets out of Git.** Add `.env` to `.gitignore`, and never commit a real connection string containing a username or password.
+
+### 4. Start the receiver
+
+Start the OTLP receiver using the CLI entry point configured by the project. For a local installation, the command follows this pattern:
+
+```bash
+agent-timetravel serve --port 4318
+```
+
+The receiver should be configured to write incoming trace data to MongoDB.
+
+### 5. Configure your agent
+
+Set the OTLP endpoint in the environment where the instrumented agent runs:
+
+```dotenv
+OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4318
+```
+
+Run the instrumented application to send traces to Neural Nexus.
+
+### 6. Open the web workbench
+
+Start the UI with the CLI command configured for the project:
+
+```bash
+agent-timetravel ui --port 8484
+```
+
+Then open:
+
+```text
+http://127.0.0.1:8484/ui
+```
+
+Select a trace to inspect its spans and use the replay workflow to investigate a specific operation.
+
+> **Configuration note:** the upstream project uses the `agent-timetravel` CLI and SQLite-oriented `--db` arguments. In this MongoDB edition, the receiver, CLI, replay engine, and evaluation runner must all load the MongoDB configuration instead of opening a SQLite database. Keep the commands above aligned with the CLI implementation in this repository.
+
+---
+
+## Register an agent
+
+Neural Nexus is designed to support a decorator-first workbench API. The following illustrates the intended usage pattern; confirm imports and supported arguments against the package in your checkout.
 
 ```python
 from agent_timetravel import TimeTravelContext, timetravel
 
 @timetravel.agent(description="Answer a question")
-async def answer(question: str, context: TimeTravelContext | None = None) -> str:
+async def answer(
+    question: str,
+    context: TimeTravelContext | None = None,
+) -> str:
+    # Replace this body with your agent's actual logic.
     return question
 ```
 
-Run `agent-timetravel dev app:timetravel` to expose the agent list and interactive
-sessions at the local UI. Direct calls to `answer(...)` remain ordinary
-pass-through calls; `TimeTravelContext` is injected only for workbench runs.
-For a custom title or separate registry, use:
+A workbench run can provide debugging context to the registered agent while ordinary direct calls remain part of the application's normal execution flow.
+
+For a custom registry or title, use the `TimeTravel` object exposed by the installed package:
 
 ```python
-from agent_timetravel import TimeTravel, TimeTravelContext
+from agent_timetravel import TimeTravel
 
-timetravel = TimeTravel(title="Research")
+timetravel = TimeTravel(title="Neural Nexus")
 ```
 
-Existing names such as `debugger` remain supported.
+Check the package examples for the exact entry-point and CLI syntax supported by the current version.
 
-During a workbench run, TimeTravel auto-activates interception for the
-frameworks below — no manual model wrapping required:
+---
 
-* **OpenAI** — official OpenAI Python SDK Chat Completions calls
-  (`chat.completions.create`, sync and async), including when the SDK is
-  configured for an OpenAI-compatible endpoint.
-* **LangGraph / langchain** — every `BaseChatModel` / `BaseTool`
-  `invoke`/`ainvoke` (which `bind_tools` bindings and ToolNode calls route
-  through), so graphs that construct models inside their nodes are stepped,
-  replayed, and captured unchanged. This includes graphs built with
-  deepagents, LangGraph's prebuilt `create_react_agent`, and similar
-  frameworks on top of `langchain-core`.
-* **Google ADK** — every `BaseLlm.generate_content_async` (Gemini,
-  Gemma, LiteLlm, Anthropic, and user-defined subclasses alike) and every ADK
-  `BaseTool.run_async`, so agents built on `google-adk` are stepped,
-  replayed, and captured without wrapping their models, including models
-  constructed inside callbacks.
+## Replay a recorded trace
 
-Other framework replay adapters (CrewAI, PydanticAI, SmolAgents)
-remain explicit: use the factories in
-[`docs/replay-adapters.md`](docs/replay-adapters.md) when needed. Generic
-decorator auto-activation for those frameworks is currently unavailable, and
-the workbench reports the actionable adapter/wrapper instead of claiming the
-framework is installed.
+Neural Nexus supports two main replay modes.
 
-### Run any LangGraph app
+### Frozen replay
 
-A foreign LangGraph project needs no TimeTravel-specific code. Install
-`agent-timetravel[langgraph]` alongside the app, then point the CLI at the
-exported graph:
+Frozen replay uses responses from the stored trace instead of making the same outbound model calls again.
 
 ```bash
-pip install agent-timetravel[langgraph]   # or: pip install -e /path/to/timetravel[langgraph]
-agent-timetravel app:main                          # ≡ agent-timetravel dev app:main
+agent-timetravel replay <trace_id> --mode frozen
 ```
 
-`app:main` may be a `timetravel.TimeTravel` registry, a compiled LangGraph graph /
-langchain runnable (wrapped into a one-agent registry automatically), or a
-plain callable. The workbench opens in your browser
-(`--no-open` to suppress) with the graph registered as an interactive agent:
-start it from the form, and every LLM and tool call pauses in the
-step-by-step debugger.
+Use this mode to reproduce and inspect the recorded execution path.
 
-### Replay a recorded trace
+### Branch replay
+
+Branch replay starts from a selected span and continues with live execution.
 
 ```bash
-# Read-only inspection (prints cursor + branch info):
-agent-timetravel replay <trace_id> --mode frozen --db ./timetravel.db
-
-# Branch from span index 4 and go live from there:
-agent-timetravel replay <trace_id> --branch-at 4 --mode branch --db ./timetravel.db
+agent-timetravel replay <trace_id> --branch-at 4 --mode branch
 ```
 
-### From Python (the load-bearing integration point)
+Use this mode to test a modified prompt, input, or supported configuration and compare the resulting behavior with the original trace.
+
+The commands above show the intended workflow. If your CLI still requires a SQLite `--db` option, update its configuration path so replay reads from MongoDB before using these commands.
+
+---
+
+## Replay from Python
+
+The replay API is intended to let an application enter a controlled replay context around an agent invocation.
 
 ```python
 from agent_timetravel.replay import replay
 from agent_timetravel.storage import TraceStore
 
-store = TraceStore("~/.agent-timetravel/timetravel.db")
+# The MongoDB-backed TraceStore should read from the configured database.
+store = TraceStore()
 
-# Frozen replay — zero outbound calls, deterministic:
-with replay(store, trace_id="<trace>", mode="frozen"):
-    agent.run()  # every LLM call served from the recorded spans
+# Frozen replay: use recorded responses for the selected trace.
+with replay(store, trace_id="<trace_id>", mode="frozen"):
+    agent.run()
 
-# Branch from span 4, then go live:
-with replay(store, trace_id="<trace>", branch_at=4, mode="branch"):
-    agent.run()  # spans 0-3 from recording, span 4+ calls your live model
+# Branch replay: replay the recorded prefix and continue live from a chosen span.
+with replay(store, trace_id="<trace_id>", branch_at=4, mode="branch"):
+    agent.run()
 ```
 
-### Wrap a framework model (Phase 6 adapters)
+The constructor and context-manager arguments must match the actual MongoDB-enabled API in the checkout. The key requirement is that `TraceStore`, the replay engine, and the receiver use the same configured MongoDB database.
 
-One import + one wrapper call per agent — no upstream framework changes:
+---
+
+## Framework adapters
+
+Neural Nexus is intended to support replay integrations for selected agent and model frameworks. Depending on the framework, an adapter may intercept calls automatically during a workbench run or may need to be attached explicitly.
+
+Illustrative adapter usage:
 
 ```python
-# Google ADK (manual factory — workbench runs on framework="adk" intercept
-# automatically, so this is only needed for replay contexts you drive yourself)
-from agent_timetravel.adapters.adk import replay_llm
-agent = Agent(model=replay_llm(real_adk_llm))
-
-# CrewAI
-from agent_timetravel.adapters.crewai import replay_llm
-crew.llm = replay_llm(real_crewai_llm)
-
-# PydanticAI
-from agent_timetravel.adapters.pydantic_ai import replay_model
-agent = Agent(model=replay_model(real_model))
-
-# HuggingFace SmolAgents
-from agent_timetravel.adapters.smolagents import replay_model
-agent.model = replay_model(real_smol_model)
-
-# LangGraph (Phase 3 — adapter pattern origin)
+# LangGraph-style adapter
 from agent_timetravel.adapters.langgraph import replay_chat_model
-graph.compiled = replay_chat_model(real_chat_model)
+wrapped_model = replay_chat_model(real_chat_model)
+
+# CrewAI-style adapter
+from agent_timetravel.adapters.crewai import replay_llm
+wrapped_llm = replay_llm(real_llm)
 ```
 
-Install the optional extras as needed:
+Use only adapters present in the current source tree. Install the optional dependencies required by each integration, and consult the repository's adapter documentation for supported versions and limitations.
+
+---
+
+## Evaluation
+
+Evaluation suites can be used to compare candidate runs against a baseline and detect behavior changes.
 
 ```bash
-pip install agent-timetravel[adk]              # one framework
-pip install agent-timetravel[adk,pydantic-ai] # several TimeTravel-managed frameworks
-pip install crewai                             # CrewAI adapter dependency
-pip install agent-timetravel[adapters]         # all four
+agent-timetravel eval suite.yaml --suite-name regression-check
 ```
 
-Without an extra installed, the corresponding factory raises
-`agent_timetravel.adapters.<fw>.AdapterError` with an actionable install hint at call
-time. `agent-timetravel --version` and `import agent_timetravel.adapters.<fw>` both succeed
-without any framework installed.
+An evaluation run should record its inputs, baseline references, results, and status in MongoDB. The exact suite schema and exit codes depend on the CLI implementation; refer to the examples and tests in the repository.
 
-### Eval a replay candidate against a baseline (Phase 5.5)
+Evaluation is most useful when it is repeatable: keep the same test inputs and evaluation criteria when comparing two agent versions.
 
-```bash
-agent-timetravel eval suite.yaml --db ./timetravel.db --suite-name my-suite
-# exit 0 = PASS, 1 = FAIL, 2 = ERROR/validation
-```
-
-### Run the live decorator-first workbench
-
-The verified local demo uses the decorator-first registry and a seeded
-OpenAI-compatible Gemma/Unsloth endpoint. Start the backend with
-[`examples/start_deep_research_stepping.py`](examples/start_deep_research_stepping.py),
-run Vite on port 5174, and open the workbench on port 8484. The complete
-commands and acceptance walkthrough are in
-[`docs/interactive-workbench-testing.md`](docs/interactive-workbench-testing.md).
-
-The current walkthrough verifies fresh sessions, automatic `PROCEED`
-advancement, substantive-call pauses after the final response, separate
-thinking, token/cost/latency/context panels, checkpoints, saved-step
-navigation, no-call timetravel/forward, continue-from-checkpoint, and the
-available edit, variant, assertion, review, and regression flows. It does not
-claim that every planned recording or framework-integration feature is
-implemented or demonstrated.
-
-The older `register_runner`/`POST /api/v1/sessions` surface remains available
-as an advanced escape hatch for custom runners and explicit framework wiring;
-it is not the primary decorator-first usage path.
+---
 
 ## Development
 
+### Install development dependencies
+
 ```bash
-# from agent_timetravel/
-python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
+```
 
-# full quality gate (run before commit)
-ruff check src/agent_timetravel tests
-pylint src/agent_timetravel/
-mypy --strict src/agent_timetravel
+### Run tests
+
+```bash
 python -m pytest tests --no-cov -q
-
-# per-phase security scan (ruff S-rules + bandit, deepsec if available)
-python scripts/security_scan.py --phase <N>
-
-# frontend dev server (Vite 6 — must run from web/; --host avoids IPv6 trap)
-cd web && pnpm dev   # or:  node_modules/.bin/vite --host 127.0.0.1
 ```
 
-Latest verified full suite: **527 passed, 13 skipped, 49 deselected, and 3
-warnings**. Frontend TypeScript typecheck and production build passed, and
-`git diff --check` passed. See
-[`docs/interactive-workbench-testing.md`](docs/interactive-workbench-testing.md)
-for the live workbench checks.
+### Run quality checks
 
-## Layout
+Run the checks configured by the repository:
 
-```
-timetravel/
-  src/agent_timetravel/          Python package
-    adapters/          Phase 6 — per-framework replay wrappers (adk, crewai,
-                       pydantic_ai, smolagents, langgraph) + shared _common.py
-    receiver.py        OTLP/HTTP ingest (Phase 1)
-    replay.py          Frozen / branch / full replay engine (Phase 3)
-    checkpoint.py      State snapshot/restore (Phase 4)
-    diff.py            Trace diff (Phase 5)
-    eval_api.py        Suite runner + baseline diff (Phase 5.5)
-    cli.py             Click-based CLI: serve / ui / replay / eval / version
-  tests/               pytest suites (latest full suite: 527 passed)
-  web/                 React + Vite + TypeScript timeline UI (P2)
-  docs/
-    phases/            Per-phase: QA, security, dev-handoff, design
-    diagrams/          Architecture + sequence (.mmd) for each phase
-  scripts/
-    dev_seed_serve.py  Local dev harness
-    security_scan.py   ruff S + bandit per-phase vulnerability scan
-  .deepsec/            Vulnerability scan reports (when deepsec available)
-  pyproject.toml       Strict ruff + pylint + mypy config; optional extras
+```bash
+ruff check src/agent_timetravel tests
+mypy --strict src/agent_timetravel
 ```
 
-See `docs/README.md` for a navigable index of all phase docs and diagrams.
-For wheel builds, installation requirements, and release publishing, see
-[`docs/packaging-release.md`](docs/packaging-release.md).
+If the project configures additional checks, such as Pylint or a security scanner, run those as well.
 
-## Out of scope (v1)
+### Frontend development
 
-- A bespoke capture proxy / capture decorator SDK (OTel + OpenInference solve
-  this; Phase 6 adds a thin adapter factory for replay, not capture).
-- Cloud / multi-user / team / sync (a trace is a local SQLite file).
-- MCP security sandbox, model routing, mobile/remote access.
+The UI uses the frontend toolchain configured in the `web/` directory. For example:
 
-See `plan.md` (parent dir) for the full phased plan.
+```bash
+cd web
+pnpm install
+pnpm dev
+```
+
+Use the scripts in `web/package.json` as the source of truth for development and production builds.
+
+### MongoDB integration tests
+
+Before merging storage changes, test the complete flow:
+
+1. Start a test MongoDB instance or use a dedicated test database.
+2. Send a trace to the OTLP receiver.
+3. Verify that trace and span documents are stored correctly.
+4. Retrieve the trace through the API or UI.
+5. Run frozen replay and confirm that stored responses are used.
+6. Run branch replay and confirm new operations are linked to the correct branch.
+7. Save and restore a checkpoint.
+8. Run an evaluation suite and verify that results persist.
+9. Confirm that tests do not accidentally use a developer's production database.
+
+---
+
+## Project structure
+
+The source tree may evolve as development continues. The main areas in the upstream project include:
+
+```text
+src/agent_timetravel/
+  adapters/       Framework-specific replay adapters
+  receiver.py     OTLP ingestion
+  replay.py       Frozen and branch replay
+  checkpoint.py   State checkpointing
+  diff.py         Trace comparison
+  eval_api.py     Evaluation runner
+  cli.py          Command-line interface
+
+tests/             Automated tests
+web/               React / Vite / TypeScript UI
+docs/              Design notes and phase documentation
+examples/          Example applications and integrations
+scripts/           Development and maintenance scripts
+pyproject.toml     Python package and tool configuration
+```
+
+Keep the project structure section synchronized with the actual files in this fork, especially if the MongoDB storage implementation introduces new modules.
+
+---
+
+## Security and privacy
+
+Agent traces can contain prompts, generated responses, tool arguments, user input, and other sensitive information.
+
+- Never commit API keys, database credentials, or real `.env` files.
+- Restrict MongoDB network access and use a least-privilege database user.
+- Avoid collecting sensitive fields unless they are needed for debugging.
+- Define retention rules for stored traces and evaluation results.
+- Do not expose the receiver or debugging UI publicly without appropriate authentication and network controls.
+- Use a dedicated test database for automated tests.
+
+Neural Nexus is a debugging tool, not a substitute for application authorization, secrets management, or production monitoring controls.
+
+---
+
+## Design goals
+
+- **Developer-controlled debugging:** inspect and replay selected runs on demand.
+- **Low integration overhead:** use existing telemetry instrumentation wherever possible.
+- **Reproducibility:** retain the data needed to understand a previous execution.
+- **Safe experimentation:** branch from a recorded point rather than overwriting the original run.
+- **Flexible persistence:** use MongoDB to store trace attributes and related debugging records.
+- **Clear separation of concerns:** keep trace ingestion, storage, replay, evaluation, and UI responsibilities distinct.
+
+## Roadmap
+
+Potential areas for continued development include:
+
+- Strengthen MongoDB-backed integration and regression tests.
+- Improve trace filtering and search for large datasets.
+- Add clearer side-by-side branch comparison.
+- Expand replay adapters and compatibility coverage.
+- Improve checkpoint recovery and replay diagnostics.
+- Add configurable retention and export workflows.
+
+Only mark a roadmap item as completed once it is implemented and verified in the repository.
