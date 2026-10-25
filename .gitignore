@@ -1,0 +1,47 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+.coverage
+htmlcov/
+dist/
+build/
+*.log
+*.sqlite
+
+# Virtualenvs
+.venv/
+venv/
+
+# Local credentials and endpoint configuration
+.env
+.env.*
+!.env.example
+
+# Rewind runtime artifacts
+*.db
+*.db-wal
+*.db-shm
+.rewind/
+tmp_test_runs/
+
+# Node / web build
+web/node_modules/
+web/dist/
+web/build/
+web/*.tsbuildinfo
+
+# Editors
+.vscode/
+.idea/
+*.swp
+.DS_Store
+*.log
+
+# DeepSec reports
+.deepsec/
+deepsec-reports/

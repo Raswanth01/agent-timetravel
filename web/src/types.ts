@@ -1,0 +1,399 @@
+// Wire-shape types mirroring `src/timetravel/timeline.py`.
+//
+// These are the source of truth for what the timeline UI understands. Keep
+// them in lock-step with the Pydantic models on the Python side: every field
+// here must exist on the JSON response, and every new field there should land
+// here before it's consumed in the UI.
+
+export type SpanKind =
+  | "gen_ai.llm"
+  | "gen_ai.tool"
+  | "gen_ai.mcp"
+  | "gen_ai.agent"
+  | "timetravel.unknown";
+
+export type SpanStatus = "OK" | "ERROR" | "UNSET";
+
+export interface TraceSummary {
+  trace_id: string;
+  root_branch_id: string;
+  created_at: string;
+  span_count: number;
+  span_count_by_kind: Record<string, number>;
+  model_names: string[];
+  has_error: boolean;
+}
+
+export interface TraceListResponse {
+  items: TraceSummary[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface SpanView {
+  timetravel_id: string;
+  span_id: string;
+  parent_span_id: string | null;
+  branch_id: string | null;
+  name: string;
+  kind: SpanKind;
+  start_time: string;
+  end_time: string;
+  status: SpanStatus;
+  status_message: string | null;
+  model_name: string | null;
+  prompt_tokens: number | null;
+  completion_tokens: number | null;
+  total_tokens: number | null;
+  messages_hash: string | null;
+  tools_hash: string | null;
+  raw_attributes: Record<string, unknown>;
+}
+
+export interface TraceDetail {
+  trace_id: string;
+  root_branch_id: string;
+  created_at: string;
+  spans: SpanView[];
+}
+
+export interface SpanSearchHit {
+  trace_id: string;
+  timetravel_id: string;
+  span_id: string;
+  parent_span_id: string | null;
+  name: string;
+  kind: SpanKind;
+  status: SpanStatus;
+  model_name: string | null;
+  start_time: string;
+  snippet: string;
+}
+
+export interface SearchResponse {
+  items: SpanSearchHit[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+// ----- Decorated agents ----------------------------------------------------
+
+/** The JSON Schema subset used to render an agent's input form. */
+export interface JsonSchema {
+  type?: ("string" | "integer" | "number" | "boolean" | "array" | "object" | "null") | Array<"string" | "integer" | "number" | "boolean" | "array" | "object" | "null">;
+  title?: string;
+  description?: string;
+  format?: string;
+  default?: unknown;
+  enum?: unknown[];
+  anyOf?: JsonSchema[];
+  oneOf?: JsonSchema[];
+  nullable?: boolean;
+  $ref?: string;
+  $defs?: Record<string, JsonSchema>;
+  required?: string[];
+  properties?: Record<string, JsonSchema>;
+  items?: JsonSchema;
+  writeOnly?: boolean;
+  secret?: boolean;
+  maxLength?: number;
+  [key: string]: unknown;
+}
+
+export interface AgentView {
+  ref: string;
+  name: string;
+  description: string;
+  framework: string;
+  input_schema: JsonSchema;
+  output_schema: JsonSchema;
+  tags: string[];
+  capabilities: Record<string, boolean>;
+  available: boolean;
+  availability_reason?: string | null;
+}
+
+export interface AgentListResponse {
+  items: AgentView[];
+  total: number;
+}
+
+export interface AgentSessionRequest {
+  inputs: Record<string, unknown>;
+  trace_id?: string;
+  mode?: string;
+  branch_at?: number | null;
+  label?: string;
+}
+
+// ----- Phase 5: branching & diff -------------------------------------------
+
+/** Recursive branch node — one row per `timetravel.models.Branch`. */
+export interface BranchNodeView {
+  branch_id: string;
+  trace_id: string;
+  parent_branch_id: string | null;
+  /** Index within the parent branch where this branch diverged. */
+  branch_at_index: number | null;
+  mode: string;
+  label: string;
+  created_at: string;
+  children: BranchNodeView[];
+}
+
+/** One row of a side-by-side span diff. */
+export interface SpanPairView {
+  index: number;
+  /** Span as it appears on the left branch; ``null`` if added on right. */
+  left: SpanView | null;
+  /** Span as it appears on the right branch; ``null`` if removed. */
+  right: SpanView | null;
+  status: "equal" | "added" | "removed" | "changed";
+  /**
+   * ``true`` for the first divergent row — the UI uses this to render the
+   * "branch point" marker on the timeline (Phase 5 exit criterion).
+   */
+  is_first_divergence: boolean;
+}
+
+export interface SpanDiffView {
+  pairs: SpanPairView[];
+  /** Index into ``pairs`` where the two branches first diverged. */
+  first_divergence_index: number | null;
+  left_count: number;
+  right_count: number;
+  identical: boolean;
+}
+
+/** One unchanged/add/remove fragment of a token-level message diff. */
+export interface SimpleMessageFragmentView {
+  text: string;
+  kind: "equal" | "added" | "removed";
+  removed?: null;
+  added?: null;
+}
+
+/** A replacement fragment with lossless old/new content. */
+export interface ChangedMessageFragmentView {
+  text: string;
+  kind: "changed";
+  removed: string;
+  added: string;
+}
+
+/** One fragment of a token-level message diff. */
+export type MessageFragmentView =
+  | SimpleMessageFragmentView
+  | ChangedMessageFragmentView;
+
+export interface MessageDiffView {
+  left: string;
+  right: string;
+  fragments: MessageFragmentView[];
+  added_tokens: number;
+  removed_tokens: number;
+  identical: boolean;
+}
+
+/** POST body for ``POST /api/v1/traces/{traceId}/branches``. */
+export interface CreateBranchRequest {
+  trace_id: string;
+  /** Branch to fork from; defaults to the trace root when omitted. */
+  parent_branch_id: string | null;
+  /** Index within the parent where the fork cuts off (inclusive of parent). */
+  branch_at_index: number;
+  mode: string;
+  label: string;
+}
+
+export interface CreateBranchResponse {
+  branch_id: string;
+  trace_id: string;
+  parent_branch_id: string | null;
+  branch_at_index: number;
+  mode: string;
+  label: string;
+  created_at: string;
+}
+
+// ----- Phase 5.5: eval harness ---------------------------------------------
+//
+// Wire shape mirrors the pydantic view models in ``src/timetravel/eval_api.py``.
+// The eval namespace rides the same origin as the timeline API — no CORS.
+
+export type EvalVerdict = "PASS" | "FAIL" | "SKIP" | "ERROR";
+
+export type EvaluatorKind =
+  | "tool_check"
+  | "goal_check"
+  | "consistency"
+  | "token_budget"
+  | "no_hallucination";
+
+export interface EvaluatorOutcomeView {
+  kind: EvaluatorKind;
+  verdict: EvalVerdict;
+  detail: string;
+  metrics: Record<string, unknown>;
+}
+
+export interface TokenRollupView {
+  prompt_tokens: number;
+  completion_tokens: number;
+  total_tokens: number;
+  llm_call_count: number;
+}
+
+export interface ScenarioLatencyView {
+  total_s: number;
+  replay_s: number;
+  evaluate_s: number;
+}
+
+export interface ScenarioResultView {
+  name: string;
+  seed_trace_id: string;
+  branch_id: string | null;
+  verdict: EvalVerdict;
+  outcomes: EvaluatorOutcomeView[];
+  rollup: TokenRollupView;
+  latency: ScenarioLatencyView;
+  error_message: string | null;
+}
+
+export interface EvalRunSummaryView {
+  run_id: string;
+  suite_name: string;
+  started_at: string;
+  finished_at: string;
+  overall_verdict: EvalVerdict;
+}
+
+export interface EvalRunDetailView {
+  run_id: string;
+  suite_name: string;
+  started_at: string;
+  finished_at: string;
+  overall_verdict: EvalVerdict;
+  scenarios: ScenarioResultView[];
+}
+
+export interface EvalRunListResponse {
+  items: EvalRunSummaryView[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface BaselineScenarioDiffView {
+  scenario_name: string;
+  baseline_verdict: EvalVerdict;
+  candidate_verdict: EvalVerdict;
+  baseline_detail: string;
+  candidate_detail: string;
+  changed: boolean;
+}
+
+export interface EvalBaselineDiffView {
+  baseline_run_id: string;
+  candidate_run_id: string;
+  overall_changed: boolean;
+  scenarios: BaselineScenarioDiffView[];
+}
+
+// ----- Phase 9: interactive stepping ---------------------------------------
+//
+// Wire shape mirrors the pydantic view models in ``src/timetravel/stepping_api.py``
+// and the Step/Decision dataclasses in ``src/timetravel/stepping.py``. The SSE
+// stream emits the StepEvent union below as one ``data: <json>`` block per
+// event.
+
+export type SessionStatus = "running" | "paused" | "done" | "errored";
+
+export interface SessionDetailView {
+  session_id: string;
+  trace_id: string;
+  branch_id: string;
+  runner_ref: string;
+  agent_ref?: string | null;
+  input_payload?: unknown;
+  result_payload?: unknown;
+  status: SessionStatus;
+  error_message: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SessionListResponse {
+  items: SessionDetailView[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface StartSessionRequest {
+  trace_id: string;
+  runner_ref: string;
+  mode?: string;
+  branch_at?: number | null;
+  label?: string;
+}
+
+export interface StartSessionResponse {
+  session_id: string;
+  trace_id: string;
+  branch_id: string;
+  status: string;
+}
+
+export type DecisionKind =
+  | "approve"
+  | "edit"
+  | "stop"
+  | "step_once"
+  | "mock"
+  | "skip"
+  | "reject"
+  | "run_until_breakpoint";
+
+export interface DecisionRequest {
+  kind: DecisionKind;
+  messages?: unknown[] | null;
+  params?: Record<string, unknown> | null;
+  args?: unknown[] | null;
+  kwargs?: Record<string, unknown> | null;
+  model?: string | null;
+  mock_result?: unknown;
+  reason?: string | null;
+}
+
+/** Server-owned run-control intent (Phase 1.2). */
+export interface RunControl {
+  pause_after_current: boolean;
+  run_until_breakpoint: boolean;
+  breakpoints: unknown[];
+}
+
+/** One SSE event from ``GET /sessions/{id}/stream``. */
+export type StepEvent =
+  | { type: "paused"; cursor: number; kind: string; step?: StepPayload; pause_reason?: "pause_after_current" | "breakpoint" | null }
+  | { type: "dispatching"; cursor: number; decision: string }
+  | { type: "resumed"; decision: string }
+  | { type: "step_completed"; cursor: number; kind: string; result: string }
+  | { type: "done"; reason?: string; cursor?: number }
+  | { type: "errored"; message: string };
+
+/** The payload of a paused LLM or tool step, mirroring stepping.Step.payload. */
+export interface StepPayload {
+  model?: string;
+  messages?: unknown[];
+  tools?: unknown[];
+  params?: Record<string, unknown>;
+  /** Phase 3.1: curated sampling parameters (temperature, seed, etc.). */
+  sampling?: Record<string, unknown>;
+  name?: string; // for tool steps
+  args?: unknown[];
+  kwargs?: Record<string, unknown>;
+}

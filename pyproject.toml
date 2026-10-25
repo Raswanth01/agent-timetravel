@@ -1,0 +1,348 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "agent-timetravel"
+version = "0.2.5"
+description = "Time-travel debugging for AI agents — OTel-in / replay-out."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "TimeTravel" }]
+keywords = ["opentelemetry", "agents", "debugging", "replay", "time-travel"]
+classifiers = [
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+]
+dependencies = [
+    "fastapi>=0.115.0",
+    "starlette>=1.3.1",
+    "uvicorn[standard]>=0.30.0",
+    "opentelemetry-proto>=1.28.0",
+    "opentelemetry-api>=1.28.0",
+    "opentelemetry-sdk>=1.28.0",
+    "openai>=1.50.0",
+    "pydantic>=2.9.0",
+    "sqlmodel>=0.0.22",
+    "click>=8.1.0",
+    "rich>=13.0.0",
+    "anyio>=4.0.0",
+    # Phase 5.5: suite YAML loader (CLI + HTTP POST both parse suite YAML).
+    "pyyaml>=6.0.2",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.24.0",
+    "pytest-cov>=5.0.0",
+    "httpx>=0.27.0",
+    "ruff>=0.7.0",
+    "pylint>=3.3.0",
+    "mypy>=1.13.0",
+    "bandit>=1.7.0",
+    "types-protobuf>=5.0.0",
+    # Phase 5.5: type stubs for PyYAML (used in eval_api YAML loader).
+    "types-PyYAML>=6.0.12",
+]
+web = [
+    # web/ is a built artifact; no runtime node dependency.
+]
+
+# Phase 6 — per-framework replay-adapter optional extras.
+# Each extra pins the minimal framework package(s) TimeTravel's adapter wraps;
+# the adapter itself degrades to a clear AdapterError if the framework is
+# absent. Install one or more with:  pip install agent-timetravel[adk]
+adk = ["google-adk>=1.28.1,<2"]
+langgraph = ["langchain-core>=0.3.0"]
+pydantic-ai = ["pydantic-ai>=1.56.0,<2"]
+smolagents = ["smolagents>=0.1.0"]
+# Bundled extra: pull in every framework adapter dependency at once.
+adapters = [
+    "google-adk>=1.28.1,<2",
+    "langchain-core>=0.3.0",
+    "pydantic-ai>=1.56.0,<2",
+    "smolagents>=0.1.0",
+]
+# Phase 7 — local-model enrichment optional deps. The ``enrichment`` extra
+# enables the preferred tokenizer path in ``render_chat_template`` and the
+# last-ditch VRAM sampler. Without it, enrichment still works — it just
+# falls back to the deterministic ``[role] content`` renderer and skips
+# system-level memory probing.
+enrichment = [
+    "transformers>=4.40.0",
+    "psutil>=5.9.0",
+]
+# Deep-research integration extra. Pulls in the canonical LangGraph deep-
+# research agent (open_deep_research) + the OpenInference LangChain
+# instrumentor used by ``examples/deep_research.py``. The example degrades
+# to an actionable install hint if these are absent. Note: on Python 3.14
+# ``open-deep-research``'s transitive ``langgraph-cli[inmem]`` pulls
+# ``jsonschema-rs<0.30`` which has no 3.14 wheel; install the package with
+# ``--no-deps`` after satisfying the runtime deps (langgraph, langchain-openai,
+# langchain-community, langchain-tavily, langchain-mcp-adapters, mcp) — see
+# ``examples/deep_research_README.md``.
+deepresearch = [
+    "open-deep-research>=0.0.16",
+    "openinference-instrumentation-langchain>=0.1.0",
+]
+
+[project.scripts]
+timetravel = "agent_timetravel.cli:main"
+agent-timetravel = "agent_timetravel.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/akshay-mp/agent-timetravel"
+Repository = "https://github.com/akshay-mp/agent-timetravel"
+Documentation = "https://github.com/akshay-mp/agent-timetravel/tree/main/docs"
+Issues = "https://github.com/akshay-mp/agent-timetravel/issues"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/agent_timetravel"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"web/dist" = "agent_timetravel/_ui"
+
+[tool.hatch.build.targets.sdist]
+# Phase 8 — ship docs, examples, scripts, and the built UI in the sdist so
+# offline users have the quickstart and demo agents.
+include = [
+    "src/agent_timetravel",
+    "README.md",
+    "docs",
+    "examples",
+    "scripts",
+    "web/dist",
+]
+exclude = [
+    "docs/debugger-roadmap.md",
+    "docs/implementation_plan.md",
+    ".pnpm-store",
+    ".pnpm-store/**",
+    "artifacts",
+    "artifacts/**",
+    "**/__pycache__",
+    "**/__pycache__/**",
+    "**/*.py[cod]",
+    "**/*.tsbuildinfo",
+    "**/node_modules",
+    "**/node_modules/**",
+    "**/.next",
+    "**/.next/**",
+]
+
+[tool.hatch.build.targets.sdist.force-include]
+"web/dist" = "web/dist"
+
+# --- Ruff (strict) ---------------------------------------------------------
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src", "tests"]
+
+[tool.ruff.lint]
+select = [
+    "E", "F", "W",   # pycodestyle / pyflakes
+    "I",             # isort
+    "B",             # bugbear
+    "UP",            # pyupgrade
+    "C4",            # comprehensions
+    "SIM",           # simplify
+    "RUF",           # ruff-specific
+    "S",             # bandit (security)
+    "A",             # builtins shadowing
+    "ANN",           # annotations
+    "PT",            # pytest style
+]
+ignore = ["S101"]  # allow assert in tests
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101", "ANN", "PLR2004"]
+# SDK-boundary monkey-patch: signatures mirror OpenAI's variadic `create`
+# which is genuinely `Any`-typed. The rest of the codebase stays strict.
+"src/agent_timetravel/openai_intercept.py" = ["ANN401"]
+"src/agent_timetravel/tool_intercept.py" = ["ANN401"]
+"src/agent_timetravel/adapters/**" = ["ANN401"]
+# Same SDK-boundary monkey-patch for langchain: signatures mirror
+# BaseChatModel/BaseTool's `input`/`config` parameters verbatim.
+"src/agent_timetravel/langgraph_intercept.py" = ["ANN401", "A002"]
+# Same SDK-boundary monkey-patch for Google ADK: signatures mirror
+# BaseLlm.generate_content_async / BaseTool.run_async verbatim.
+"src/agent_timetravel/adk_intercept.py" = ["ANN401"]
+# Wraps foreign langgraph/langchain runnables — genuinely Any at the boundary.
+"src/agent_timetravel/graph_app.py" = ["ANN401"]
+# Deep-research integration scripts. The ODR graph + LangChain model objects
+# are genuinely Any-typed at the SDK boundary; the scripts mirror the existing
+# adapter-override pragmatism. (Examples live outside src/ so they don't ship
+# in the wheel, but we still keep them lint-clean.)
+"examples/deep_research.py" = ["ANN401"]
+# Example scripts use Any at SDK boundaries (OpenAI client, OTel objects) the
+# same way the adapters do, and intentionally write to a /tmp demo DB.
+"examples/deep_research_demo.py" = ["ANN401", "S108"]
+"examples/**" = ["ANN401", "S108", "E501"]
+
+[tool.ruff.format]
+quote-style = "double"
+
+# --- Pylint (strict) -------------------------------------------------------
+[tool.pylint.main]
+py-version = "3.11"
+load-plugins = ["pylint.extensions.docparams"]
+
+[tool.pylint.messages_control]
+disable = [
+    "too-few-public-methods",   # dataclasses/pydantic models
+    "too-many-arguments",       # OTel proto parsing
+    "too-many-positional-arguments",
+    "too-many-return-statements",  # dispatch heuristics (classifier)
+]
+
+[tool.pylint.design]
+max-line-length = 100
+
+[tool.pylint.format]
+max-line-length = 100
+
+# Test fixtures reuse parameter names like ``store``/``trace_id`` by design —
+# that's how pytest dependency-injection works.
+[tool.pylint."tests/**"]
+disable = [
+    "redefined-outer-name",  # pytest fixtures
+    "missing-function-docstring",  # test functions document themselves
+    "missing-class-docstring",  # stub/fake classes are intentional
+    "unused-argument",  # orig_create stubs need the SDK's full signature
+    "import-outside-toplevel",  # tests frequently import builtins late
+    "use-implicit-booleaness-not-comparison",  # explicit `== []` is clearer
+]
+
+# Phase 5.5 eval engine is intentionally one file: pure evaluators + suite
+# runner + dispatch in one place is more readable than splitting into
+# evaluator.py + runner.py + dispatch.py. The pylint maxima for module,
+# function, and class complexity need to relax accordingly.
+[tool.pylint."src/agent_timetravel/evaluate.py"]
+disable = [
+    "too-many-lines",  # one-file design choice (documented in module docstring)
+    "too-many-nested-blocks",  # OpenInference response schema is nested
+    "too-many-instance-attributes",  # EvalSuite has many natural fields
+    "too-many-branches",  # suite validation is a long but linear dispatch
+    "too-many-locals",  # scenario runner has many local tracking vars
+]
+
+# eval_api.py view models are intentionally isomorphic to evaluate.py's
+# frozen dataclasses (DB shape → wire shape). The 5-7 identical field
+# declarations are the projection contract, not duplication.
+[tool.pylint."src/agent_timetravel/eval_api.py"]
+disable = [
+    "duplicate-code",  # view models mirror dataclasses by design
+]
+
+# Phase 9 added four interactive-session CRUD methods (upsert/get/list/delete)
+# to TraceStore, pushing the public-method count over pylint's default of 20.
+# The store is intentionally one class — splitting per-table facades would
+# fragment the connection/transaction discipline (see storage.py:184 _execute).
+[tool.pylint."src/agent_timetravel/storage.py"]
+disable = [
+    "too-many-public-methods",  # one store, many tables — see _execute invariant
+]
+
+# Phase 6 — every framework adapter follows the same factory pattern: lazy
+# import inside the factory, subclass upstream's Base LLM class (which has
+# no public composition API), and reuse extract_signature + the Responder
+# protocol. These relaxations apply uniformly to all adapter modules so
+# the pragmas don't have to be scattered inline across 5 files.
+[tool.pylint."src/agent_timetravel/adapters/**"]
+disable = [
+    "protected-access",  # subclassing framework classes requires _generate-style overrides
+    "import-outside-toplevel",  # lazy imports keep `timetravel --version` fast
+    "too-many-statements",  # factory + closure-bound inner class + helpers in one place
+    "too-few-public-methods",  # inner replay classes expose overrides, no new public surface
+]
+
+# --- mypy (strict) ---------------------------------------------------------
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+packages = ["agent_timetravel"]
+
+[[tool.mypy.overrides]]
+# Generated protobuf modules — namespaced as ``opentelemetry.proto.*``
+# (NOT ``opentelemetry_proto.*`` — that was the wheel name on PyPI, not the
+# import path). Stubs are absent; ignore at the import surface, not project-wide.
+module = ["opentelemetry.proto.*", "google.protobuf.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+# Optional agent-framework dependencies: TimeTravel ships without requiring
+# langchain_core or openai at install time (lazy imports). The adapters
+# are only type-checked when the framework is present in the developer's
+# venv; otherwise the import surface is opaque to mypy.
+module = ["langchain_core.*", "langchain.*", "openai.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+# Phase 7 — local-model enrichment optional deps (lazy imported). transformers
+# provides tokenizer support for render_chat_template; psutil is the last-ditch
+# VRAM sampler fallback. Neither is required at install time.
+module = ["transformers.*", "psutil.*"]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+# Phase 6 — additional framework adapters (ADK / CrewAI / PydanticAI /
+# SmolAgents). All four import lazily inside the factory function and
+# raise AdapterError if missing; type-checks against these packages are
+# performed only when the developer installs the corresponding extra.
+module = [
+    "google.adk.*",
+    "google.genai.*",
+    "crewai.*",
+    "pydantic_ai.*",
+    "smolagents.*",
+    "huggingface_hub.*",
+]
+ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+# Deep-research integration (examples/deep_research.py). open_deep_research
+# is an optional extra; type-checks run only when the developer installs it.
+module = ["open_deep_research.*"]
+ignore_missing_imports = true
+
+# --- pytest ----------------------------------------------------------------
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+asyncio_mode = "auto"
+addopts = [
+    "-ra",
+    "--strict-markers",
+    "--strict-config",
+    "--cov=agent_timetravel",
+    "--cov-report=term-missing",
+    "-m", "not integration",
+]
+markers = [
+    "integration: end-to-end tests that exercise multiple components",
+    "slow: tests that take >1s",
+]
+
+[tool.coverage.run]
+source = ["src/agent_timetravel"]
+branch = true
+
+[tool.coverage.report]
+exclude_lines = ["pragma: no cover", "if TYPE_CHECKING:", "raise NotImplementedError"]
+
+# --- bandit -----------------------------------------------------------------
+# B105 (hardcoded_password_string) fires on enum string values like
+# "token_budget" / "pass" and on rich colour names like "green". The
+# codebase has no real credentials; ruff S105 / S106 enforce the genuine
+# password cases. We exclude B105 globally and let the other 100+ bandit
+# checks run.
+[tool.bandit]
+skips = ["B105"]

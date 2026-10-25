@@ -1,0 +1,1170 @@
+/*
+ * TimeTravel timeline UI — base styles. Dark theme by default, with a
+ * `color-scheme` meta in index.html swapping the browser chrome.
+ *
+ * Layout is kept simple on purpose: a top bar, a main content area, and an
+ * slide-over inspector. No grid system, no utility classes — these are
+ * bespoke styles tuned for the timeline's three views.
+ */
+
+:root {
+  /* Kind palette — centralised so bar / inspector / search agree. */
+  --timetravel-kind-llm: #4f9cf9;
+  --timetravel-kind-tool: #22c55e;
+  --timetravel-kind-mcp: #a855f7;
+  --timetravel-kind-agent: #f59e0b;
+  --timetravel-kind-unknown: #94a3b8;
+
+  --timetravel-status-ok: #22c55e;
+  --timetravel-status-error: #ef4444;
+  --timetravel-status-unset: #94a3b8;
+  --timetravel-selected: #facc15;
+
+  --timetravel-bg: #0f1115;
+  --timetravel-surface: #181b22;
+  --timetravel-surface-2: #1f232c;
+  --timetravel-text: #e6e9ef;
+  --timetravel-muted: #8a93a3;
+  --timetravel-border: #2a2f3a;
+  --timetravel-accent: #4f9cf9;
+
+  font-family:
+    "JetBrains Mono", "SF Mono", ui-monospace, Menlo, monospace;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  background: var(--timetravel-bg);
+  color: var(--timetravel-text);
+}
+
+code {
+  font-family: inherit;
+  font-size: 0.92em;
+  background: var(--timetravel-surface-2);
+  padding: 0 4px;
+  border-radius: 3px;
+}
+
+pre {
+  font-family: inherit;
+  margin: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+button {
+  font-family: inherit;
+  font-size: inherit;
+  color: inherit;
+  background: transparent;
+  border: 1px solid var(--timetravel-border);
+  padding: 4px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+button:hover:enabled {
+  border-color: var(--timetravel-accent);
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.link-button {
+  border: none;
+  padding: 0;
+  color: var(--timetravel-accent);
+  background: transparent;
+}
+
+.link-button:hover {
+  text-decoration: underline;
+}
+
+input,
+select,
+textarea {
+  font-family: inherit;
+  font-size: inherit;
+  color: var(--timetravel-text);
+  background: var(--timetravel-surface-2);
+  border: 1px solid var(--timetravel-border);
+  border-radius: 4px;
+  padding: 4px 8px;
+}
+
+.muted {
+  color: var(--timetravel-muted);
+}
+
+.banner {
+  padding: 10px 12px;
+  border-radius: 6px;
+  border: 1px solid;
+  margin-bottom: 12px;
+}
+
+.banner--error {
+  color: var(--timetravel-status-error);
+  border-color: var(--timetravel-status-error);
+  background: color-mix(in srgb, var(--timetravel-status-error) 12%, var(--timetravel-bg));
+}
+
+.banner--hint {
+  color: var(--timetravel-text);
+  border-color: var(--timetravel-border);
+  background: var(--timetravel-surface-2);
+}
+
+.banner code {
+  background: var(--timetravel-bg);
+}
+
+/* --- app shell --- */
+
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background: var(--timetravel-bg);
+}
+
+.app__bar {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  padding: 8px 16px;
+  background: var(--timetravel-surface);
+  border-bottom: 1px solid var(--timetravel-border);
+}
+
+.app__bar h1 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.brand {
+  border: none;
+  background: none;
+  color: var(--timetravel-text);
+  font-weight: 600;
+}
+
+.app__nav {
+  display: flex;
+  gap: 16px;
+  align-items: baseline;
+}
+
+.app__main {
+  flex: 1;
+  overflow: auto;
+  padding: 16px;
+}
+
+/* --- trace list --- */
+
+.trace-list__header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.trace-list__header h2 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.trace-table {
+  width: 100%;
+  border-collapse: collapse;
+}
+
+.trace-table th,
+.trace-table td {
+  text-align: left;
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--timetravel-border);
+}
+
+.trace-table th {
+  color: var(--timetravel-muted);
+  font-weight: 500;
+  font-size: 12px;
+  text-transform: uppercase;
+}
+
+.trace-table__row {
+  cursor: pointer;
+}
+
+.trace-table__row:hover {
+  background: var(--timetravel-surface);
+}
+
+.trace-id {
+  font-size: 12px;
+}
+
+.kind-badges {
+  display: inline-flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.kind-badge {
+  padding: 2px 6px;
+  border-radius: 3px;
+  font-size: 11px;
+  color: #0b0d12;
+  font-weight: 600;
+}
+
+.status-dot {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  border: 1px solid var(--timetravel-border);
+}
+
+.pagination {
+  display: flex;
+  justify-content: center;
+  gap: 16px;
+  align-items: center;
+  margin-top: 16px;
+}
+
+/* --- timeline --- */
+
+.timeline__header {
+  display: flex;
+  gap: 16px;
+  align-items: baseline;
+  margin-bottom: 12px;
+}
+
+.timeline__header h2 {
+  margin: 0;
+  font-size: 18px;
+}
+
+.filter-rail {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 8px 12px;
+  background: var(--timetravel-surface);
+  border: 1px solid var(--timetravel-border);
+  border-radius: 6px;
+  margin-bottom: 12px;
+}
+
+.filter-rail label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 12px;
+  color: var(--timetravel-muted);
+}
+
+.filter-rail input,
+.filter-rail select {
+  min-width: 140px;
+}
+
+.filter-rail .checkbox {
+  flex-direction: row;
+  align-items: center;
+  gap: 8px;
+  color: var(--timetravel-text);
+}
+
+.timeline__canvas {
+  background: var(--timetravel-surface);
+  border: 1px solid var(--timetravel-border);
+  border-radius: 6px;
+  padding: 12px;
+}
+
+.timeline__axis {
+  display: flex;
+  justify-content: space-between;
+  padding: 0 4px 8px;
+  font-size: 12px;
+  border-bottom: 1px dashed var(--timetravel-border);
+  margin-bottom: 8px;
+}
+
+.timeline__lanes {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-height: 60px;
+}
+
+.timeline__lane {
+  position: relative;
+  height: 28px;
+  background: var(--timetravel-surface-2);
+  border-radius: 3px;
+}
+
+.span-bar {
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 6px;
+  border-radius: 3px;
+  border: 1px solid transparent;
+  color: #0b0d12;
+  font-size: 11px;
+  font-weight: 600;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  min-width: 24px;
+}
+
+.span-bar__name {
+  font-weight: 400;
+}
+
+.timeline__empty {
+  padding: 20px;
+  text-align: center;
+}
+
+/* --- inspector --- */
+
+.inspector {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 480px;
+  max-width: 100vw;
+  background: var(--timetravel-surface);
+  border-left: 1px solid var(--timetravel-border);
+  padding: 16px;
+  overflow: auto;
+  z-index: 10;
+  box-shadow: -8px 0 24px rgba(0, 0, 0, 0.4);
+}
+
+.inspector__header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+}
+
+.inspector__summary {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+.kind-pill {
+  padding: 2px 8px;
+  border-radius: 3px;
+  font-size: 11px;
+  color: #0b0d12;
+  font-weight: 600;
+}
+
+.status-pill {
+  padding: 2px 8px;
+  border: 1px solid;
+  border-radius: 3px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.inspector__tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 12px;
+}
+
+.tab {
+  border-radius: 4px 4px 0 0;
+}
+
+.tab--active {
+  background: var(--timetravel-surface-2);
+  border-bottom: 1px solid var(--timetravel-accent);
+  color: var(--timetravel-accent);
+}
+
+.inspector__body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.field {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  padding: 4px 0;
+  border-bottom: 1px dashed var(--timetravel-border);
+}
+
+.field dt {
+  color: var(--timetravel-muted);
+  font-size: 12px;
+  margin: 0;
+  flex-shrink: 0;
+}
+
+.field dd {
+  margin: 0;
+  text-align: right;
+}
+
+.hash {
+  font-size: 11px;
+}
+
+.messages {
+  margin-top: 12px;
+}
+
+.messages h4 {
+  margin: 0 0 6px;
+  color: var(--timetravel-muted);
+  font-size: 12px;
+  text-transform: uppercase;
+}
+
+.messages ol {
+  padding: 0;
+  margin: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.message-obj {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.message-role {
+  color: var(--timetravel-kind-llm);
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
+.message-text {
+  background: var(--timetravel-surface-2);
+  padding: 6px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  max-height: 200px;
+  overflow: auto;
+}
+
+.raw-json {
+  background: var(--timetravel-surface-2);
+  padding: 8px;
+  border-radius: 4px;
+  font-size: 12px;
+  max-height: 60vh;
+  overflow: auto;
+}
+
+/* --- search overlay --- */
+
+.overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.7);
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 80px 16px 16px;
+  z-index: 20;
+}
+
+.overlay__panel {
+  background: var(--timetravel-surface);
+  border: 1px solid var(--timetravel-border);
+  border-radius: 6px;
+  padding: 16px;
+  width: 600px;
+  max-width: 100%;
+  max-height: 80vh;
+  overflow: auto;
+}
+
+.overlay__header {
+  display: flex;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.search-input {
+  width: 100%;
+  padding: 8px;
+  margin-bottom: 8px;
+}
+
+.search-filters {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.search-filters label {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  font-size: 11px;
+  color: var(--timetravel-muted);
+}
+
+.search-results {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.search-hit {
+  width: 100%;
+  text-align: left;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 4px 8px;
+  align-items: baseline;
+  padding: 6px 8px;
+  border-radius: 4px;
+}
+
+.search-hit:hover {
+  background: var(--timetravel-surface-2);
+}
+
+.search-hit__name {
+  font-weight: 600;
+}
+
+.snippet {
+  grid-column: 1 / -1;
+  font-size: 12px;
+  color: var(--timetravel-muted);
+}
+
+/* ------------------------------------------------------------------ */
+/* Phase 5 — branching & diff                                          */
+/* ------------------------------------------------------------------ */
+
+.timeline__mode-toggle {
+  margin-left: auto;
+  display: inline-flex;
+  gap: 2px;
+  background: var(--timetravel-surface);
+  padding: 2px;
+  border-radius: 4px;
+  border: 1px solid var(--timetravel-border);
+}
+
+.timeline__mode-toggle .tab {
+  border: none;
+  background: transparent;
+  color: var(--timetravel-muted);
+  padding: 4px 10px;
+  font-family: inherit;
+  font-size: 12px;
+  border-radius: 3px;
+  cursor: pointer;
+}
+
+.timeline__mode-toggle .tab--active {
+  background: var(--timetravel-surface-2);
+  color: var(--timetravel-text);
+}
+
+/* Branch panel grid: tree on the left, diff on the right. Stacks on narrow viewports. */
+.branch-panel {
+  display: grid;
+  grid-template-columns: minmax(280px, 1fr) 2fr;
+  gap: 12px;
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .branch-panel {
+    grid-template-columns: 1fr;
+  }
+}
+
+.branch-panel__hint {
+  padding: 12px;
+  border: 1px dashed var(--timetravel-border);
+  border-radius: 4px;
+  background: var(--timetravel-surface);
+}
+
+/* BranchTree */
+.branch-tree {
+  background: var(--timetravel-surface);
+  border: 1px solid var(--timetravel-border);
+  border-radius: 4px;
+  padding: 8px 10px;
+}
+
+.branch-tree__header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.branch-tree__header h3 {
+  margin: 0;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--timetravel-muted);
+}
+
+.branch-tree__list,
+.branch-tree__list ul {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.branch-tree__row {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px;
+  border-radius: 3px;
+  border-left: 3px solid transparent;
+  border-right: 3px solid transparent;
+}
+
+.branch-tree__row--left {
+  border-left-color: var(--timetravel-kind-llm);
+  background: color-mix(in srgb, var(--timetravel-kind-llm) 10%, transparent);
+}
+
+.branch-tree__row--right {
+  border-right-color: var(--timetravel-kind-tool);
+}
+
+.branch-tree__row--both {
+  background: color-mix(in srgb, var(--timetravel-selected) 16%, transparent);
+}
+
+.branch-tree__label {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+  color: var(--timetravel-text);
+  min-width: 0;
+}
+
+.branch-tree__mode {
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--timetravel-muted);
+  border: 1px solid var(--timetravel-border);
+  border-radius: 2px;
+  padding: 1px 4px;
+  flex: 0 0 auto;
+}
+
+.branch-tree__name {
+  font-weight: 600;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.branch-tree__when {
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.branch-tree__picks {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+}
+
+.branch-tree__pick {
+  font-size: 11px;
+  padding: 2px 6px;
+  border: 1px solid var(--timetravel-border);
+  background: var(--timetravel-surface-2);
+  color: var(--timetravel-muted);
+  border-radius: 3px;
+  cursor: pointer;
+  font-family: inherit;
+  transition: background 80ms ease, color 80ms ease;
+}
+
+.branch-tree__pick:hover {
+  background: var(--timetravel-surface);
+  color: var(--timetravel-text);
+}
+
+.branch-tree__pick--active,
+.branch-tree__pick[aria-pressed="true"] {
+  background: var(--timetravel-selected);
+  color: var(--timetravel-text);
+  border-color: var(--timetravel-selected);
+}
+
+.branch-tree__fork {
+  font-size: 11px;
+  color: var(--timetravel-accent);
+  white-space: nowrap;
+}
+
+/* DiffView */
+.diff-view {
+  background: var(--timetravel-surface);
+  border: 1px solid var(--timetravel-border);
+  border-radius: 4px;
+  padding: 10px 12px;
+}
+
+.diff-view__summary {
+  font-size: 12px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--timetravel-border);
+  margin-bottom: 8px;
+}
+
+.diff-view__branch {
+  color: var(--timetravel-accent);
+}
+
+.diff-view__pairs {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.diff-view__row {
+  padding: 6px 8px;
+  border-radius: 3px;
+  margin-bottom: 4px;
+  position: relative;
+}
+
+.diff-view__row--equal {
+  color: var(--timetravel-muted);
+}
+
+.diff-view__row--added {
+  background: color-mix(in srgb, var(--timetravel-status-ok) 12%, transparent);
+  border-left: 3px solid var(--timetravel-status-ok);
+}
+
+.diff-view__row--removed {
+  background: color-mix(in srgb, var(--timetravel-status-error) 12%, transparent);
+  border-left: 3px solid var(--timetravel-status-error);
+}
+
+.diff-view__row--changed {
+  background: color-mix(in srgb, var(--timetravel-kind-agent) 14%, transparent);
+  border-left: 3px solid var(--timetravel-kind-agent);
+}
+
+.diff-view__divergence {
+  font-size: 11px;
+  color: var(--timetravel-selected);
+  font-weight: 600;
+  margin-bottom: 4px;
+  letter-spacing: 0.04em;
+}
+
+.diff-view__row-main {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.diff-view__index {
+  font-size: 11px;
+}
+
+.diff-view__status {
+  font-size: 12px;
+  font-weight: 600;
+  min-width: 70px;
+}
+
+.diff-view__span {
+  font-size: 12px;
+}
+
+.diff-view__span--missing {
+  color: var(--timetravel-muted);
+}
+
+.diff-view__span-name {
+  color: var(--timetravel-text);
+}
+
+.diff-view__msg-toggle {
+  font-size: 11px;
+  margin-left: auto;
+}
+
+.diff-view__msg-body {
+  margin-top: 6px;
+  padding: 8px 10px;
+  background: var(--timetravel-bg);
+  border-radius: 3px;
+  border: 1px solid var(--timetravel-border);
+}
+
+.message-diff-text {
+  margin: 6px 0 0;
+  font-size: 13px;
+  line-height: 1.6;
+  word-break: break-word;
+}
+
+.message-diff__ins {
+  text-decoration: none;
+  background: color-mix(in srgb, var(--timetravel-status-ok) 22%, transparent);
+  color: var(--timetravel-status-ok);
+  border-radius: 2px;
+  padding: 0 2px;
+}
+
+.message-diff__del {
+  text-decoration: line-through;
+  background: color-mix(in srgb, var(--timetravel-status-error) 22%, transparent);
+  color: var(--timetravel-status-error);
+  border-radius: 2px;
+  padding: 0 2px;
+}
+
+.message-diff__changed ins,
+.message-diff__changed del {
+  display: inline;
+}
+
+/* Modal */
+.modal-backdrop {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 200;
+}
+
+.modal {
+  background: var(--timetravel-surface);
+  border: 1px solid var(--timetravel-border);
+  border-radius: 6px;
+  padding: 16px 18px;
+  min-width: 320px;
+  max-width: 460px;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.4);
+}
+
+.modal__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+
+.modal__header h3 {
+  margin: 0;
+  font-size: 14px;
+}
+
+.modal__field {
+  display: block;
+  margin: 10px 0;
+  font-size: 12px;
+  color: var(--timetravel-muted);
+}
+
+.modal__field input {
+  display: block;
+  width: 100%;
+  margin-top: 4px;
+  padding: 6px 8px;
+  background: var(--timetravel-bg);
+  border: 1px solid var(--timetravel-border);
+  border-radius: 3px;
+  color: var(--timetravel-text);
+  font-family: inherit;
+  font-size: 13px;
+}
+
+.modal__field input:focus {
+  outline: none;
+  border-color: var(--timetravel-accent);
+}
+
+.modal__footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.primary-button {
+  background: var(--timetravel-accent);
+  color: var(--timetravel-bg);
+  border: none;
+  padding: 6px 14px;
+  border-radius: 3px;
+  font-family: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.primary-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.inspector__actions {
+  margin: 10px 0;
+  padding-top: 8px;
+  border-top: 1px dashed var(--timetravel-border);
+}
+
+/* ----- Phase 5.5: eval harness ------------------------------------------ */
+
+.pill {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 3px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  border: 1px solid transparent;
+}
+
+.pill--pass {
+  background: color-mix(in srgb, var(--timetravel-status-ok) 18%, transparent);
+  color: var(--timetravel-status-ok);
+  border-color: color-mix(in srgb, var(--timetravel-status-ok) 45%, transparent);
+}
+
+.pill--fail,
+.pill--error {
+  background: color-mix(in srgb, var(--timetravel-status-error) 18%, transparent);
+  color: var(--timetravel-status-error);
+  border-color: color-mix(in srgb, var(--timetravel-status-error) 45%, transparent);
+}
+
+.pill--skip {
+  background: color-mix(in srgb, var(--timetravel-status-unset) 18%, transparent);
+  color: var(--timetravel-status-unset);
+  border-color: color-mix(in srgb, var(--timetravel-status-unset) 45%, transparent);
+}
+
+.pill--info {
+  background: color-mix(in srgb, var(--timetravel-accent) 18%, transparent);
+  color: var(--timetravel-accent);
+  border-color: color-mix(in srgb, var(--timetravel-accent) 45%, transparent);
+}
+
+.eval-list__table,
+.eval-detail__scenarios {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.eval-list__table th,
+.eval-list__table td,
+.eval-detail__scenarios th,
+.eval-detail__scenarios td {
+  padding: 8px 10px;
+  border-bottom: 1px solid var(--timetravel-border);
+  text-align: left;
+  vertical-align: top;
+}
+
+.eval-list__table tbody tr,
+.eval-detail__scenarios tbody tr {
+  cursor: default;
+}
+
+.eval-list__table th,
+.eval-detail__scenarios th {
+  font-weight: 600;
+  color: var(--timetravel-dim);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.eval-detail__header {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+
+.eval-detail__rollup {
+  display: flex;
+  gap: 16px;
+  font-size: 12px;
+  color: var(--timetravel-dim);
+}
+
+.eval-row__open {
+  background: none;
+  border: 1px solid var(--timetravel-border);
+  border-radius: 3px;
+  padding: 2px 8px;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+/* ----- Phase 9: interactive sessions ------------------------------------- */
+
+.session-list__form {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+
+.session-list__input {
+  background: var(--timetravel-surface-2);
+  border: 1px solid var(--timetravel-border);
+  border-radius: 3px;
+  color: var(--timetravel-text);
+  padding: 6px 10px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+  min-width: 200px;
+}
+
+.session-list__input:focus {
+  outline: none;
+  border-color: var(--timetravel-accent);
+}
+
+.session-detail__body {
+  display: grid;
+  grid-template-columns: 1fr 280px;
+  gap: 24px;
+  align-items: start;
+}
+
+.session-detail__history {
+  border-left: 1px solid var(--timetravel-border);
+  padding-left: 16px;
+  font-size: 13px;
+}
+
+.history-list {
+  list-style: none;
+  padding: 0;
+  margin: 8px 0 0;
+}
+
+.history-item {
+  padding: 4px 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--timetravel-border) 50%, transparent);
+}
+
+.step-panel {
+  background: var(--timetravel-surface);
+  border: 1px solid var(--timetravel-border);
+  border-radius: 6px;
+  padding: 16px;
+}
+
+.step-panel__header {
+  margin-bottom: 12px;
+}
+
+.step-panel__actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 16px;
+  padding-top: 12px;
+  border-top: 1px solid var(--timetravel-border);
+  flex-wrap: wrap;
+}
+
+.step-panel__edit-textarea {
+  width: 100%;
+  background: var(--timetravel-surface-2);
+  border: 1px solid var(--timetravel-border);
+  border-radius: 3px;
+  color: var(--timetravel-text);
+  padding: 8px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 12px;
+  resize: vertical;
+}
+
+.step-panel__edit-textarea:focus {
+  outline: none;
+  border-color: var(--timetravel-accent);
+}
+
+.fields {
+  display: flex;
+  gap: 24px;
+  margin: 8px 0 16px;
+  flex-wrap: wrap;
+}
+
+@media (max-width: 800px) {
+  .session-detail__body {
+    grid-template-columns: 1fr;
+  }
+  .session-detail__history {
+    border-left: none;
+    border-top: 1px solid var(--timetravel-border);
+    padding-left: 0;
+    padding-top: 16px;
+  }
+}
